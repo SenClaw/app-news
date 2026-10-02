@@ -1,0 +1,73 @@
+{
+  "id": "news",
+  "name": "Tin Tức",
+  "description": "Trung tâm tin tức cá nhân: thu thập bài từ nhiều nguồn RSS/Atom (VnExpress, Tuổi Trẻ, BBC… hoặc TỰ TÌM NGUỒN bằng AI theo chủ đề / dò feed từ URL trang web) VÀ từ các trang KHÔNG CÓ RSS bằng cách quét link bài viết ngay trong nội dung trang (đọc Open Graph của từng bài để lấy tiêu đề/tóm tắt/ảnh/ngày đăng) theo chu kỳ, dedup tự động, PHÂN LOẠI chuyên mục + chủ đề bằng System One (Laya) chạy trên máy (khớp từ khóa khi chưa có System One), phát hiện XU HƯỚNG (cụm từ tăng nhiệt so kỳ trước — thuần thống kê), gom bài cùng sự kiện từ nhiều nguồn thành DÒNG SỰ KIỆN với timeline diễn biến, BẢN ĐỒ LIÊN KẾT sự kiện dạng graph (kéo-thả, phóng to/thu nhỏ) kèm AI map lại thành mạch chuyện, tìm kiếm toàn văn không dấu (FTS5), tải toàn văn bài gốc, và AI qua bridge SenClaw: đánh giá từng bài (tóm tắt, cảm xúc, tầm quan trọng, giật tít, độ tin cậy), tóm tắt diễn biến sự kiện, nhận định xu hướng, viết bản điểm tin. Giao diện sáng/tối. Dữ liệu 100% local (SQLite) — app chỉ ĐỌC tin, không đăng gì lên đâu.",
+  "icon": "📰",
+  "runtime": {
+    "kind": "server",
+    "mode": "background",
+    "start": "./news",
+    "healthPath": "/api/status",
+    "port": 4660
+  },
+  "integration": {
+    "type": "iframe",
+    "url": "/"
+  },
+  "bridge": {
+    "postMessage": true,
+    "capabilities": [
+      "space.rest",
+      "llm.request"
+    ]
+  },
+  "mcp": {
+    "name": "news-mcp",
+    "transport": "http",
+    "path": "/api/mcp/sse",
+    "description": "SenClaw News MCP: kho tin tức đa nguồn cho agent — thu thập ngay (news_fetch), tìm kiếm không dấu (news_search), tin mới nhất theo chủ đề/nguồn (news_latest), chi tiết + toàn văn bài (news_article_get/news_article_content), cụm từ tăng nhiệt (news_trends), dòng sự kiện + timeline (news_story_list/news_story_get), BẢN ĐỒ liên kết sự kiện (news_story_graph) và AI map lại thành mạch chuyện + nối quan hệ máy bỏ sót (news_analyze_graph), AI đánh giá bài / tóm tắt diễn biến / nhận định xu hướng / điểm tin (news_analyze_article, news_story_brief, news_analyze_trends, news_digest), TỰ TÌM NGUỒN qua AI hoặc dò feed từ URL, tự chuyển sang quét nội dung trang khi trang không có RSS (news_source_discover), quản lý nguồn RSS lẫn nguồn quét-trang (news_source_*, kind=feed|scrape) và chủ đề (news_topic_*), chuyên mục do System One phân loại (news_sections; lọc bằng section trong news_latest/news_search). Chỉ đọc tin — không có tool nào đăng bài hay gửi đi đâu.",
+    "autoRegister": true
+  },
+  "skills": [
+    {
+      "name": "news-reporter",
+      "path": "skills/news-reporter",
+      "triggers": [
+        "tin tức",
+        "tin mới",
+        "đọc báo",
+        "điểm tin",
+        "bản tin",
+        "tin hôm nay",
+        "có tin gì",
+        "xu hướng tin",
+        "trending",
+        "tin nóng",
+        "dòng sự kiện",
+        "diễn biến sự kiện",
+        "timeline tin",
+        "tóm tắt tin",
+        "đánh giá tin",
+        "tin giật tít",
+        "nguồn tin",
+        "tìm nguồn",
+        "thêm nguồn",
+        "bản đồ tin",
+        "liên kết sự kiện",
+        "sự kiện liên quan",
+        "rss",
+        "theo dõi chủ đề",
+        "news",
+        "headline",
+        "breaking news"
+      ]
+    }
+  ],
+  "personas": [
+    {
+      "name": "news-analyst",
+      "path": "personas/news-analyst.md",
+      "description": "Biên tập viên tin tức — điểm tin theo yêu cầu, theo dõi xu hướng và dòng sự kiện, thẩm định độ tin cậy bài viết bằng tool của app Tin Tức; mọi tin đều dẫn nguồn."
+    }
+  ]
+}

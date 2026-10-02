@@ -1,0 +1,17 @@
+{
+  "version": "1.1.0",
+  "category": "app",
+  "keywords": [
+    "news"
+  ],
+  "permissions": {
+    "network": [
+      "127.0.0.1"
+    ],
+    "exec": [
+      "./news"
+    ]
+  },
+  "updater": "none",
+  "repo_url": "https://github.com/SenClaw/app-news"
+}

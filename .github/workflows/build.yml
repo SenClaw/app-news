@@ -1,0 +1,156 @@
+name: Build & publish
+
+# Builds the installable zip you drop into SenClaw → Apps → Install, for all
+# three desktop platforms, and publishes it to https://senclaw.bacnd.com on a
+# push to main, a `v*` tag, or an explicit dispatch.
+#
+# A Space App ships a native binary, so the zip a user installs has to match
+# the machine their daemon runs on — hence one build per platform. The daemon
+# launches a server app through the platform shell, and `cmd /C ./name` does
+# not work, so the Windows zip carries a `.exe` and a manifest whose
+# `runtime.start` was rewritten to match (scripts/pack.sh).
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the built zips to the SenClaw hub"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # A Space App zip carries no debug info and the hub caps uploads at 20 MB.
+  CARGO_PROFILE_RELEASE_DEBUG: "false"
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-x64, runner: ubuntu-22.04 }
+          - { platform: darwin-arm64, runner: macos-14 }
+          - { platform: windows-x64, runner: windows-2022 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Caches written on a tag ref are unreadable from every other ref: they
+      # only burn the 10 GB quota and evict the main-branch entries that the
+      # tag build itself restores from.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.platform }}
+          save-if: ${{ github.ref_type != 'tag' }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run tests
+        run: cargo test --locked
+
+      # GitHub's Windows runners ship 7-Zip but not `zip`, which is what the
+      # packer reaches for first. Installing it keeps one code path on all
+      # three platforms.
+      - name: Install zip (Windows)
+        if: runner.os == 'Windows'
+        run: choco install zip --no-progress -y
+
+      - name: Pack
+        run: bash scripts/pack.sh
+
+      # `path: dist` keeps the platform directory inside the artifact, which is
+      # what lets the publish job merge every artifact into one dist/<platform>/
+      # tree without renaming anything.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zip-${{ matrix.platform }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish to senclaw.bacnd.com
+    needs: build
+    # Safe on every push to main: `name@version` comes from senclaw-hub.json and
+    # the hub answers 409 for a version it already has, which publish-app.sh
+    # treats as a skip. A push that did not bump the version publishes nothing.
+    if: |
+      github.event_name != 'pull_request'
+      && (inputs.publish || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: zip-*
+          merge-multiple: true
+
+      # Platforms go in a fixed order: if the hub still accepts only one
+      # artifact per version, the first one is the one guaranteed to land, and
+      # the log says which ones were skipped.
+      - name: Publish
+        env:
+          # Personal access token with the `publish` scope, minted at
+          # https://senclaw.bacnd.com/settings/tokens.
+          SENCLAW_HUB_TOKEN: ${{ secrets.SENCLAW_HUB_TOKEN }}
+          SENCLAW_HUB_URL: ${{ vars.SENCLAW_HUB_URL || 'https://senclaw.bacnd.com' }}
+        run: |
+          set -euo pipefail
+          : "${SENCLAW_HUB_TOKEN:?no publish token — add the SENCLAW_HUB_TOKEN secret (scope: publish)}"
+          for platform in darwin-arm64 linux-x64 windows-x64; do
+            zip="dist/$platform/news-app.zip"
+            [[ -f "$zip" ]] || { echo "::warning::no $zip"; continue; }
+            ALLOW_VERSION_EXISTS=1 bash scripts/publish-app.sh "$zip" --platform "$platform"
+          done
+
+  release:
+    name: Attach zips to the GitHub release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: zip-*
+          merge-multiple: true
+
+      # A release is one flat list of assets, but the zip exists once per
+      # platform — so the platform moves from the directory into the filename,
+      # or the release would keep whichever copy uploaded last.
+      - name: Name each zip after its platform
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          for f in dist/*/news-app.zip; do
+            cp "$f" "release-assets/$(basename "$(dirname "$f")")--news-app.zip"
+          done
+          ls -la release-assets
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*.zip
+          fail_on_unmatched_files: true
